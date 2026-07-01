@@ -1,0 +1,103 @@
+--------------------------Ajaz call back VALIDATE_POS_USER------------------------------
+DECLARE
+
+    l_user_code      SALES.MK_POS_USERS.VC_USER_CODE%TYPE;
+    l_user_name      SALES.MK_POS_USERS.VC_USER_NAME%TYPE;
+    l_active         SALES.MK_POS_USERS.CH_USER_ACTIVE%TYPE;
+
+    l_till_no        POS.DT_LOGIN_LOGOUT.VC_TILL_NO%TYPE;
+    l_wh_code        POS.DT_LOGIN_LOGOUT.VC_WAREHOUSE_CODE%TYPE;
+    l_shift          POS.DT_LOGIN_LOGOUT.CH_SHIFT%TYPE;
+
+BEGIN
+
+    SELECT VC_USER_CODE,
+           VC_USER_NAME,
+           CH_USER_ACTIVE
+    INTO
+           l_user_code,
+           l_user_name,
+           l_active
+    FROM SALES.MK_POS_USERS
+    WHERE VC_PASSWORD = :P14_PASSWORD
+      AND VC_COMP_CODE = '02';
+
+    IF NVL(l_active,'N') <> 'Y' THEN
+        raise_application_error(-20001,'User Disabled');
+    END IF;
+
+    SELECT VC_TILL_NO,
+           VC_WAREHOUSE_CODE,
+           CH_SHIFT
+    INTO
+           l_till_no,
+           l_wh_code,
+           l_shift
+    FROM POS.DT_LOGIN_LOGOUT
+    WHERE VC_USER_NAME = l_user_name
+      AND VC_COMP_CODE = '02';
+
+   
+    apex_util.set_session_state('P15_USER_CODE', l_user_code);
+    apex_util.set_session_state('P15_USER_NAME', l_user_name);
+    apex_util.set_session_state('P15_TILL_NO',   l_till_no);
+    apex_util.set_session_state('P15_WH_CODE',   l_wh_code);
+    apex_util.set_session_state('P15_SHIFT',     l_shift);
+
+
+    apex_json.open_object;
+    apex_json.write('status','SUCCESS');
+    apex_json.close_object;
+
+EXCEPTION
+
+    WHEN NO_DATA_FOUND THEN
+        apex_json.open_object;
+        apex_json.write('status','ERROR');
+        apex_json.write('message','Invalid Password or Till Mapping Not Found');
+        apex_json.close_object;
+
+    WHEN OTHERS THEN
+        apex_json.open_object;
+        apex_json.write('status','ERROR');
+        apex_json.write('message',SQLERRM);
+        apex_json.close_object;
+
+END;
+
+
+
+
+------------------------function on login button ------------------------------------
+
+
+apex.server.process(
+    "VALIDATE_POS_USER",
+    {
+        pageItems: "#P14_PASSWORD"
+    },
+    {
+        dataType: "json",
+        success: function(data){
+
+            if(data.status === "SUCCESS"){
+
+               
+
+                apex.navigation.redirect(
+                    "f?p=" + $v("pFlowId") + ":15:" + $v("pInstance")
+                );
+
+            } else {
+
+                apex.message.alert(data.message);
+
+            }
+
+        },
+        error: function(xhr, status, error){
+            apex.message.alert("Server error: " + error);
+        }
+    }
+);
+
