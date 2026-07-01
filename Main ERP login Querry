@@ -1,0 +1,118 @@
+CREATE OR REPLACE PACKAGE MAKESS.PKG_AUTH_RETAIL IS
+
+    FUNCTION Authenticate_User(
+        p_User_Name IN VARCHAR2,
+        p_Password  IN VARCHAR2,
+        p_Company   IN VARCHAR2
+    ) RETURN BOOLEAN;
+
+    PROCEDURE Process_Login(
+        p_User_Name IN VARCHAR2,
+        p_Password  IN VARCHAR2,
+        p_App_Id    IN NUMBER,
+        p_Company   IN VARCHAR2
+    );
+
+END PKG_AUTH_RETAIL;
+/
+
+
+CREATE OR REPLACE PACKAGE BODY MAKESS.PKG_AUTH_RETAIL IS
+
+    FUNCTION Authenticate_User(
+        p_User_Name IN VARCHAR2,
+        p_Password  IN VARCHAR2,
+        p_Company   IN VARCHAR2
+    ) RETURN BOOLEAN
+    AS
+        v_Password   mk_users.vc_password%TYPE;
+        v_Active     mk_users.ch_user_active%TYPE;
+        v_user_code  mk_users.ch_user_code%TYPE;
+    BEGIN
+
+        IF p_User_Name IS NULL OR p_Password IS NULL THEN
+            APEX_UTIL.SET_SESSION_STATE(
+                'LOGIN_MESSAGE',
+                'Enter Username and Password'
+            );
+            RETURN FALSE;
+        END IF;
+
+        BEGIN
+            SELECT decrypt(vc_password),
+                   ch_user_active,
+                   ch_user_code
+            INTO   v_Password,
+                   v_Active,
+                   v_user_code
+            FROM   mk_users
+            WHERE  UPPER(vc_user_name) = UPPER(p_User_Name)
+            AND    vc_comp_code = p_Company;
+
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                APEX_UTIL.SET_SESSION_STATE(
+                    'LOGIN_MESSAGE',
+                    'User not found'
+                );
+                RETURN FALSE;
+        END;
+
+        IF v_Password <> p_Password THEN
+            APEX_UTIL.SET_SESSION_STATE(
+                'LOGIN_MESSAGE',
+                'Wrong Password'
+            );
+            RETURN FALSE;
+        END IF;
+
+        IF v_Active <> 'Y' THEN
+            APEX_UTIL.SET_SESSION_STATE(
+                'LOGIN_MESSAGE',
+                'User inactive'
+            );
+            RETURN FALSE;
+        END IF;
+
+        APEX_UTIL.SET_SESSION_STATE('GLOBAL_USER_CODE', v_user_code);
+        APEX_UTIL.SET_SESSION_STATE('GLOBAL_COMP_CODE', p_Company);
+        APEX_UTIL.SET_SESSION_STATE('SESSION_USER_NAME', p_User_Name);
+
+        RETURN TRUE;
+
+    END Authenticate_User;
+
+
+    PROCEDURE Process_Login(
+        p_User_Name IN VARCHAR2,
+        p_Password  IN VARCHAR2,
+        p_App_Id    IN NUMBER,
+        p_Company   IN VARCHAR2
+    )
+    AS
+        v_Result BOOLEAN;
+    BEGIN
+
+        v_Result := Authenticate_User(
+            p_User_Name => p_User_Name,
+            p_Password  => p_Password,
+            p_Company   => p_Company
+        );
+
+        IF v_Result THEN
+
+            Wwv_Flow_Custom_Auth_Std.Post_Login(
+                p_User_Name,
+                p_Password,
+                v('APP_SESSION'),
+                p_App_Id || ':1'
+            );
+
+        ELSE
+            OWA_UTIL.REDIRECT_URL('f?p=' || p_App_Id || ':1:' || v('APP_SESSION'));
+        END IF;
+
+    END Process_Login;
+
+END PKG_AUTH_RETAIL;
+/
