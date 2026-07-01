@@ -1,0 +1,386 @@
+CREATE OR REPLACE PACKAGE POS.pkg_pos AS
+
+    PROCEDURE add_item_to_cart
+    (
+        p_session    IN NUMBER,
+        p_item_code  IN VARCHAR2,
+        p_user       IN VARCHAR2,
+        p_till       IN VARCHAR2,
+        p_shift      IN VARCHAR2,
+        p_wh         IN VARCHAR2,
+        p_comp       IN VARCHAR2
+    );
+
+    PROCEDURE save_cash_sale
+    (
+        p_session     IN NUMBER,
+        p_till_no     IN VARCHAR2,
+        p_wh_code     IN VARCHAR2,
+        p_comp_code   IN VARCHAR2,
+        p_invoice_no  OUT VARCHAR2
+    );
+
+END pkg_pos;
+/
+
+
+
+CREATE OR REPLACE PACKAGE BODY POS.pkg_pos AS
+
+------------------------------------------------------------------
+-- ADD ITEM TO CART
+------------------------------------------------------------------
+PROCEDURE add_item_to_cart
+(
+    p_session    IN NUMBER,
+    p_item_code  IN VARCHAR2,
+    p_user       IN VARCHAR2,
+    p_till       IN VARCHAR2,
+    p_shift      IN VARCHAR2,
+    p_wh         IN VARCHAR2,
+    p_comp       IN VARCHAR2
+)
+AS
+    v_exists     NUMBER;
+    v_hd_exists  NUMBER;
+BEGIN
+
+    ------------------------------------------------------------------
+    -- DETAIL: ADD / UPDATE ITEM
+    ------------------------------------------------------------------
+
+    SELECT COUNT(*)
+    INTO v_exists
+    FROM pos.tmp_dt_cash_sale
+    WHERE session_id = p_session
+      AND vc_item_code = p_item_code;
+
+    IF v_exists > 0 THEN
+
+        UPDATE pos.tmp_dt_cash_sale
+        SET nu_qty = NVL(nu_qty,0) + 1,
+            nu_line_total = (NVL(nu_qty,0)+1) * nu_item_price,
+            nu_actual_conv_total = (NVL(nu_qty,0)+1) * nu_item_price
+        WHERE session_id = p_session
+          AND vc_item_code = p_item_code;
+
+    ELSE
+
+        INSERT INTO pos.tmp_dt_cash_sale
+        (
+            vc_item_code,
+            vc_description,
+            nu_qty,
+            nu_item_price,
+            nu_line_total,
+            session_id,
+            user_name,
+            vc_till_no,
+            vc_stock_code,
+            vc_comp_code,
+            nu_actual_conv_total,
+            ch_shift,
+            vc_warehouse_code
+        )
+        SELECT
+            vc_item_code,
+            vc_item_desc,
+            1,
+            nu_local_price,
+            nu_local_price,
+            p_session,
+            p_user,
+            p_till,
+            vc_item_barcode,
+            p_comp,
+            nu_local_price,
+            p_shift,
+            p_wh
+        FROM pos.mst_item_dtl
+        WHERE vc_item_code = p_item_code;
+
+    END IF;
+
+    ------------------------------------------------------------------
+    -- HEADER: CREATE IF NOT EXISTS
+    ------------------------------------------------------------------
+
+    SELECT COUNT(*)
+    INTO v_hd_exists
+    FROM pos.temp_hd_cash_sale
+    WHERE session_id = p_session;
+
+    IF v_hd_exists = 0 THEN
+
+        INSERT INTO pos.temp_hd_cash_sale
+        (
+            session_id,
+            vc_comp_code,
+            dt_invoice_date,
+            vc_till_no,
+            vc_username,
+            nu_bill_currency_code,
+            nu_bill_amount,
+            nu_paid_amount,
+            nu_conv_rate,
+            vc_payt_mode,
+            nu_discount_value,
+            nu_change_currency_code,
+            nu_change_amt_bal,
+            nu_customer_code,
+            vc_customer_name,
+            nu_account_code,
+            nu_fcrate,
+            nu_pconv_factor,
+            vc_warehouse_code,
+            vc_auth_code,
+            ch_shift,
+            dt_create_date,
+            vc_cash_customer_name
+        )
+        VALUES
+        (
+            p_session,
+            p_comp,
+            TRUNC(SYSDATE),
+            p_till,
+            p_user,
+            6,
+            0,
+            0,
+            1,
+            'R',
+            0,
+            6,
+            0,
+            91,
+            'CASH CUSTOMER',
+            982,
+            1,
+            1,
+            p_wh,
+            '08',
+            p_shift,
+            SYSTIMESTAMP,
+            'CASH CUSTOMER'
+        );
+
+    END IF;
+
+    ------------------------------------------------------------------
+    -- HEADER TOTAL UPDATE
+    ------------------------------------------------------------------
+
+    UPDATE pos.temp_hd_cash_sale h
+    SET h.nu_bill_amount =
+        (
+            SELECT NVL(SUM(nu_line_total),0)
+            FROM pos.tmp_dt_cash_sale d
+            WHERE d.session_id = p_session
+        ),
+        h.nu_paid_amount =
+        (
+            SELECT NVL(SUM(nu_line_total),0)
+            FROM pos.tmp_dt_cash_sale d
+            WHERE d.session_id = p_session
+        )
+        - NVL(h.nu_discount_value,0)
+    WHERE h.session_id = p_session;
+
+END add_item_to_cart;
+
+------------------------------------------------------------------
+-- SAVE CASH SALE
+------------------------------------------------------------------
+PROCEDURE save_cash_sale
+(
+    p_session     IN NUMBER,
+    p_till_no     IN VARCHAR2,
+    p_wh_code     IN VARCHAR2,
+    p_comp_code   IN VARCHAR2,
+    p_invoice_no  OUT VARCHAR2
+)
+AS
+    l_inv_no NUMBER;
+    l_inv    VARCHAR2(20);
+    l_abb    VARCHAR2(10);
+BEGIN
+
+    ------------------------------------------------------------------
+    -- INVOICE NUMBER GENERATION (UNCHANGED LOGIC)
+    ------------------------------------------------------------------
+
+    SELECT nu_end_number
+    INTO l_inv_no
+    FROM invent.mst_control
+    WHERE vc_comp_code = p_comp_code
+      AND vc_control_code =
+      (
+          SELECT vc_user_name
+          FROM pos.mst_till_ip
+          WHERE vc_comp_code = p_comp_code
+            AND UPPER(vc_till_name)=UPPER(p_till_no)
+      )
+      AND TRUNC(SYSDATE)
+      BETWEEN DT_FIN_START_DATE AND DT_FIN_END_DATE;
+
+    SELECT vc_user_name
+    INTO l_abb
+    FROM pos.mst_till_ip
+    WHERE vc_comp_code = p_comp_code
+      AND UPPER(vc_till_name)=UPPER(p_till_no);
+
+    l_inv_no := l_inv_no + 1;
+
+    l_inv := p_comp_code || RTRIM(l_abb) || l_inv_no;
+
+    p_invoice_no := l_inv;
+
+    ------------------------------------------------------------------
+    -- INSERT HEADER FROM TEMP HEADER
+    ------------------------------------------------------------------
+
+    INSERT INTO pos.hd_cash_sale
+(
+    vc_comp_code,
+    vc_invoice_no,
+    dt_invoice_date,
+    vc_till_no,
+    vc_username,
+    nu_bill_currency_code,
+    nu_bill_amount,
+    nu_paid_amount,
+    nu_conv_rate,
+    vc_payt_mode,
+    nu_discount_value,
+    nu_change_currency_code,
+    nu_change_amt_bal,
+    nu_customer_code,
+    vc_customer_name,
+    nu_account_code,
+    nu_fcrate,
+    nu_pconv_factor,
+    vc_warehouse_code,
+    vc_auth_code,
+    ch_shift,
+    dt_create_date,
+    dt_mod_date,
+    vc_hexa_inv,
+    vc_server_notation,
+    vc_cash_customer_name
+)
+SELECT
+    vc_comp_code,
+    p_invoice_no,
+    dt_invoice_date,
+    vc_till_no,
+    vc_username,
+    nu_bill_currency_code,
+    nu_bill_amount,
+    nu_paid_amount,
+    nu_conv_rate,
+    vc_payt_mode,
+    nu_discount_value,
+    nu_change_currency_code,
+    nu_change_amt_bal,
+    nu_customer_code,
+    vc_customer_name,
+    nu_account_code,
+    nu_fcrate,
+    nu_pconv_factor,
+    vc_warehouse_code,
+    vc_auth_code,
+    ch_shift,
+    dt_create_date,
+    SYSDATE,
+    DBMS_RANDOM.STRING('X',12),
+    'HO',
+    vc_cash_customer_name
+FROM pos.temp_hd_cash_sale
+WHERE session_id = p_session;
+    ------------------------------------------------------------------
+    -- INSERT DETAIL LINES
+    ------------------------------------------------------------------
+
+    INSERT INTO pos.dt_cash_sale
+    (
+        vc_comp_code,
+        vc_invoice_no,
+        dt_invoice_date,
+        vc_till_no,
+        vc_item_code,
+        vc_stock_code,
+        vc_description,
+        nu_qty,
+        nu_item_price,
+        nu_line_total,
+        nu_price_no,
+        vc_line_auth_code,
+        ch_discounted_item,
+        nu_actual_conv_total,
+        nu_unit_factor,
+        ch_shift,
+        nu_line_discount,
+        vc_vat_code,
+        vc_warehouse_code,
+        ch_vat_applicable,
+        nu_article_vat_amount,
+        nu_sr_no,
+        dt_create_date,
+        nu_wtavg_cost,
+        nu_pur_price,
+        nu_vat_perc,
+        vc_server_notation
+    )
+    SELECT
+        t.vc_comp_code,
+        p_invoice_no,
+        TRUNC(SYSDATE),
+        t.vc_till_no,
+        t.vc_item_code,
+        t.vc_stock_code,
+        t.vc_description,
+        t.nu_qty,
+        t.nu_item_price,
+        t.nu_line_total,
+        t.nu_item_price,
+        'N',
+        'N',
+        t.nu_line_total,
+        1,
+        '1',
+        0,
+        '5',
+        p_wh_code,
+        'N',
+        0,
+        ROW_NUMBER() OVER(ORDER BY t.tmp_id),
+        SYSTIMESTAMP,
+        t.nu_item_price,
+        t.nu_item_price,
+        0,
+        'HO'
+    FROM pos.tmp_dt_cash_sale t
+    WHERE t.session_id = p_session;
+
+    ------------------------------------------------------------------
+    -- UPDATE CONTROL (UNCHANGED)
+    ------------------------------------------------------------------
+
+    UPDATE invent.mst_control
+    SET nu_end_number = l_inv_no
+    WHERE vc_comp_code = p_comp_code
+      AND vc_control_code =
+      (
+          SELECT vc_user_name
+          FROM pos.mst_till_ip
+          WHERE vc_comp_code = p_comp_code
+            AND UPPER(vc_till_name)=UPPER(p_till_no)
+      )
+      AND TRUNC(SYSDATE)
+      BETWEEN DT_FIN_START_DATE AND DT_FIN_END_DATE;
+
+END save_cash_sale;
+
+END pkg_pos;
+/
