@@ -22,6 +22,25 @@ BEGIN
 
     l_html := '
 <style>
+@media print {
+    body {
+        margin: 0;
+        padding: 0;
+    }
+
+    .invoice {
+        width: 210mm;
+        min-height: 297mm;
+        margin: 0 auto;
+        padding: 15mm;
+        box-shadow: none;
+        border: none;
+    }
+
+    .no-print {
+        display: none;
+    }
+}
 
 body{
 font-family:Arial;
@@ -101,10 +120,13 @@ font-weight:bold;
 
 <div class="invoice">
 
-<div class="company">
-<h1>Tushar Pvt. Ltd.</h1>
-<h3>Kinshasa, DR Congo</h3>
-<h3>Phone : +243xxxxxxxxx</h3>
+<div style="display:flex;align-items:center;justify-content:center;gap:15px;">
+    <img src="#APP_FILES#ChatGPT Image Apr 26, 2026, 02_29_57 PM.png" style="height:90px;">
+    <div>
+        <h1 style="margin:0;">Tushar Pvt. Ltd.</h1>
+        <h3 style="margin:0;">Kinshasa, DR Congo</h3>
+        <h3 style="margin:0;">+91 7037455258</h3>
+    </div>
 </div>
 
 <table class="info">
@@ -204,15 +226,22 @@ l_html := l_html || '
                 <td><b>Grand Total</b></td>
                 <td style="text-align:right;"><b>'||TO_CHAR(l_total,'999G999G999')||'</b></td>
             </tr>
-        </table>
-    </div>
+        </table><br><br><br><br>
+        <div style="text-align:right;margin-top:10px;">
+   <center> <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data='||:P17_INVOICE_NO||'" />
+    <p style="font-size:11px;">Scan to verify invoice</p>   </center>
+</div>
 
+    </div>
+    
 </div>
 
 <!-- FOOTER -->
+
 <div style="margin-top:30px;text-align:center;padding:10px;background:#f2f2f2;border-top:2px solid #000;font-size:13px;">
     Thank you — Please visit again!
 </div>
+
 
 </div>';
 
