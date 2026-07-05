@@ -1,0 +1,62 @@
+chatbot by ollama
+
+https://ollama.com/?utm_source=chatgpt.com download form this then install simple
+
+open cmd type "ollama"
+
+go to ollama installated location type cmd then "ollama run gemma2:2b"
+
+check ollama on browser http://localhost:11434
+
+then check version
+
+C:\Users\Tushar>ollama --version 
+ollama version is 0.31.1
+
+check the result connect with sys
+
+SELECT principal,
+       host,
+       privilege,
+       is_grant
+FROM dba_host_aces
+ORDER BY principal, host;
+--------------------------------------------------------------------------------------------------------
+Right now your schema MAKESS is NOT allowed to call the internet (localhost).
+Login as SYSDBA in SQL Developer or SQL*Plus and run:
+
+BEGIN
+  DBMS_NETWORK_ACL_ADMIN.APPEND_HOST_ACE(
+    host => 'localhost',
+    ace  => xs$ace_type(
+      privilege_list => xs$name_list('connect','resolve'),
+      principal_name => 'MAKESS',
+      principal_type => xs_acl.ptype_db
+    )
+  );
+END;
+/
+COMMIT;
+
+
+STEP 2 — Test if MAKESS can call Ollama
+
+After running ACL, run this in MAKESS schema:
+
+SELECT utl_http.request('http://localhost:11434')
+FROM dual;
+
+
+STEP 3 — Now we build your AI Chatbot in APEX
+
+Once step 2 works, we will create:
+
+APEX Page: AI Chat
+Items:
+P10_PROMPT → Text Area (user question)
+P10_RESPONSE → Display Only (AI answer)
+Button → Ask AI
+
+
+
+
