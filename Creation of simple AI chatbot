@@ -57,6 +57,118 @@ P10_PROMPT → Text Area (user question)
 P10_RESPONSE → Display Only (AI answer)
 Button → Ask AI
 
+creat ea process when click button 
 
+DECLARE
+  l_response CLOB;
+BEGIN
+  l_response := apex_web_service.make_rest_request(
+    p_url         => 'http://localhost:11434/api/generate',
+    p_http_method => 'POST',
+    p_body        => '{
+      "model": "llama3.2",
+      "prompt": "' || :P10_PROMPT || '",
+      "stream": false
+    }'
+  );
+
+  :P10_RESPONSE := l_response;
+END;
+
+--------------------------------now if get error------conn sys and run this for your apex scema------------------------------
+
+BEGIN
+  DBMS_NETWORK_ACL_ADMIN.APPEND_HOST_ACE(
+    host => 'localhost',
+    ace  => xs$ace_type(
+      privilege_list => xs$name_list('connect','resolve'),
+      principal_name => 'MAKESS',
+      principal_type => xs_acl.ptype_db
+    )
+  );
+END;
+/
+
+BEGIN
+  DBMS_NETWORK_ACL_ADMIN.APPEND_HOST_ACE(
+    host => '*',
+    ace  => xs$ace_type(
+      privilege_list => xs$name_list('connect','resolve'),
+      principal_name => 'MAKESS',
+      principal_type => xs_acl.ptype_db
+    )
+  );
+END;
+/
+
+--------------------------------then also not work http error come----------------
+
+So your PL/SQL code is correct
+✔ Ollama is running
+✔ APEX is correct
+❌ Only DATABASE permission is missing
+
+
+SELECT sys_context('USERENV','CURRENT_SCHEMA') FROM dual;
+
+SELECT *
+FROM apex_applications
+WHERE application_id = 109;
+
+SELECT username
+FROM dba_users
+WHERE username LIKE 'APEX%';
+
+BEGIN
+  DBMS_NETWORK_ACL_ADMIN.CREATE_ACL(
+    acl         => 'ollama_apex.xml',
+    description => 'Allow APEX to call Ollama',
+    principal   => 'APEX_240100',
+    is_grant    => TRUE,
+    privilege   => 'connect'
+  );
+END;
+/
+
+BEGIN
+  DBMS_NETWORK_ACL_ADMIN.ADD_PRIVILEGE(
+    acl        => 'ollama_apex.xml',
+    principal  => 'APEX_240100',
+    is_grant   => TRUE,
+    privilege  => 'resolve'
+  );
+END;
+/
+
+BEGIN
+  DBMS_NETWORK_ACL_ADMIN.ADD_PRIVILEGE(
+    acl        => 'ollama_apex.xml',
+    principal  => 'APEX_PUBLIC_USER',
+    is_grant   => TRUE,
+    privilege  => 'connect'
+  );
+END;
+/
+
+BEGIN
+  DBMS_NETWORK_ACL_ADMIN.ADD_PRIVILEGE(
+    acl        => 'ollama_apex.xml',
+    principal  => 'APEX_PUBLIC_USER',
+    is_grant   => TRUE,
+    privilege  => 'resolve'
+  );
+END;
+/
+
+BEGIN
+  DBMS_NETWORK_ACL_ADMIN.ASSIGN_ACL(
+    acl  => 'ollama_apex.xml',
+    host => 'localhost'
+  );
+END;
+/
+
+
+-----------------------now UI part------------------------------------
 
 
