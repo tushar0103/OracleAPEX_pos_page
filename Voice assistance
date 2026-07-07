@@ -53,3 +53,87 @@ function speak(text){
     window.speechSynthesis.speak(speech);
 
 }
+
+
+-----------------------------------now create a button ask AI-------------and create a dynamic action-----------
+
+1) true action qill subit promt and message-----------and retrun response and message again------execute server side----
+
+DECLARE
+  l_response   CLOB;
+  l_body       CLOB;
+  l_answer     CLOB;
+  l_messages   JSON_ARRAY_T;
+  l_user_msg   JSON_OBJECT_T;
+  l_asst_msg   JSON_OBJECT_T;
+BEGIN
+  -- Load existing chat history or start new conversation
+  IF :P18_MESSAGES IS NOT NULL AND LENGTH(TRIM(:P18_MESSAGES)) > 0 THEN
+    l_messages := JSON_ARRAY_T.parse(:P18_MESSAGES);
+  ELSE
+    l_messages := JSON_ARRAY_T();
+    l_messages.append(
+      JSON_OBJECT_T.parse(
+        '{"role":"system","content":"You are a helpful assistant. Remember the full conversation and answer follow-up questions using earlier messages."}'
+      )
+    );
+  END IF;
+
+  -- Add current user question to history
+  l_user_msg := JSON_OBJECT_T();
+  l_user_msg.put('role', 'user');
+  l_user_msg.put('content', :P18_PROMPT);
+  l_messages.append(l_user_msg);
+
+  -- Build Ollama chat request (works on older Oracle versions)
+  l_body := '{' ||
+            '"model":"llama3.2",' ||
+            '"stream":false,' ||
+            '"messages":' || l_messages.to_clob() ||
+            '}';
+
+  -- REST call headers
+  apex_web_service.g_request_headers.delete;
+  apex_web_service.g_request_headers(1).name  := 'Content-Type';
+  apex_web_service.g_request_headers(1).value := 'application/json';
+
+  l_response := apex_web_service.make_rest_request(
+    p_url         => 'http://localhost:11434/api/chat',
+    p_http_method => 'POST',
+    p_body        => l_body
+  );
+
+  l_answer := JSON_VALUE(l_response, '$.message.content' RETURNING VARCHAR2(32767));
+
+  IF l_answer IS NULL THEN
+    l_answer := 'No response from Ollama. Raw response: ' || SUBSTR(l_response, 1, 500);
+  END IF;
+
+  -- Save AI answer into history
+  l_asst_msg := JSON_OBJECT_T();
+  l_asst_msg.put('role', 'assistant');
+  l_asst_msg.put('content', l_answer);
+  l_messages.append(l_asst_msg);
+
+  :P18_MESSAGES := l_messages.to_clob();
+  :P18_RESPONSE := l_answer;
+
+EXCEPTION
+  WHEN OTHERS THEN
+    :P18_RESPONSE := 'Error: ' || SQLERRM;
+END;
+
+2) true action will be js -----------------------
+var question = apex.item("P18_PROMPT").getValue();
+var answer   = apex.item("P18_RESPONSE").getValue();
+
+if (question && answer) {
+  $("#chat_history").append(
+    '<div class="user_chat">' + apex.util.escapeHTML(question) + '</div>' +
+    '<div class="ai_chat">' + apex.util.escapeHTML(answer) + '</div>'
+  );
+
+  apex.item("P18_PROMPT").setValue("");
+
+  $("#chat_history").scrollTop($("#chat_history")[0].scrollHeight);
+}
