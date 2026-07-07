@@ -21,10 +21,10 @@ if (!SpeechRecognition) {
 
         var text = event.results[0][0].transcript;
 
-        apex.item("P1_PROMPT").setValue(text);
+        apex.item("P1_PROMPT").setValue(text);  // P1_PROMPT  this is item in which you voice converting into text
 
         // Click your existing Ask AI button
-        apex.event.trigger($("#ASK_AI"), "click");
+        apex.event.trigger($("#btn_AI"), "click");   //btn_AI is static id of button on which ajaz call back is whotter by which APi is hitting
     };
 
     recognition.onerror = function (event) {
