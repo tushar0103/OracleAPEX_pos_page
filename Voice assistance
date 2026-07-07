@@ -1,0 +1,55 @@
+create a button mic then create Dynamic action and paste below
+
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition; //Check Browser Support
+//Different browsers use different names.  chrome use webkitSpeechRecognition 
+
+if (!SpeechRecognition) {
+    alert("Speech Recognition is not supported in this browser.");
+} else {
+
+    const recognition = new SpeechRecognition();  //Create Recognition Object
+
+    recognition.lang = "en-US";  //This tells the speech engine which language to recognize.  hindi recognition.lang="hi-IN";
+    recognition.interimResults = false; //Speech recognition can return two kinds of results.
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = function () {
+        console.log("Listening...");
+    };
+
+    recognition.onresult = function (event) {
+
+        var text = event.results[0][0].transcript;
+
+        apex.item("P1_PROMPT").setValue(text);
+
+        // Click your existing Ask AI button
+        apex.event.trigger($("#ASK_AI"), "click");
+    };
+
+    recognition.onerror = function (event) {
+        console.log(event);
+        alert("Speech Error: " + event.error);
+    };
+
+    recognition.onend = function () {
+        console.log("Recognition ended");
+    };
+
+    recognition.start();  //Start Listening
+}
+
+--------------------------------------------------------------
+Now paste below Global function
+function speak(text){
+
+    const speech = new SpeechSynthesisUtterance();
+
+    speech.text = text;
+    speech.lang = "en-US";
+    speech.rate = 1;
+    speech.pitch = 1;
+
+    window.speechSynthesis.speak(speech);
+
+}
